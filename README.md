@@ -4,14 +4,14 @@ Proyek ini berfokus pada pengembangan model klasifikasi untuk memprediksi probab
 
 ---
 
-### ## Fitur Utama
+## Fitur Utama
 * **Preprocessing Data:** Pembersihan data *missing values*, normalisasi, dan *feature engineering* pada dataset aktivitas gunung berapi.
 * **Model Machine Learning:** Implementasi algoritma klasifikasi (seperti Random Forest, XGBoost, atau SVM) untuk prediksi akurat.
 * **Evaluasi Performa:** Penggunaan metrik *Accuracy*, *Precision*, *Recall*, dan *F1-Score* serta *Confusion Matrix*.
 
 ---
 
-### ## Arsitektur Proyek
+## Arsitektur Proyek
 
 
 1.  **Data Acquisition:** Mengambil data mentah dari sensor atau dataset historis.
@@ -21,7 +21,7 @@ Proyek ini berfokus pada pengembangan model klasifikasi untuk memprediksi probab
 
 ---
 
-### ## Teknologi yang Digunakan
+## Teknologi yang Digunakan
 * **Bahasa:** Python
 * **Library:** 
     * `scikit-learn`: Untuk pemodelan machine learning.
@@ -30,7 +30,7 @@ Proyek ini berfokus pada pengembangan model klasifikasi untuk memprediksi probab
 
 ---
 
-### ## Cara Penggunaan
+## Cara Penggunaan
 1.  **Clone Repository:**
     ```bash
     git clone https://github.com/Muhammad-Ikhwan-Fathulloh/Project-Machine-Learning-Volcano.git
@@ -44,6 +44,6 @@ Proyek ini berfokus pada pengembangan model klasifikasi untuk memprediksi probab
 
 ---
 
-### ## Kontribusi
+## Kontribusi
 Kontribusi sangat terbuka. Silakan buka *issue* atau ajukan *pull request* untuk pengembangan fitur deteksi dini yang lebih lanjut.
 ```
