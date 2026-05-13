@@ -155,7 +155,41 @@ LocalStack memungkinkan Anda untuk mensimulasikan layanan AWS di mesin lokal tan
     awslocal ecr describe-images --repository-name volcano-classifier
     ```
 
-### 6. Deploy ke Sanberlify.app
+### 6. Deploy ke VPS (Ubuntu/Debian)
+Deployment manual ke VPS menggunakan Docker dan Nginx sebagai Reverse Proxy.
+
+1.  **Install Docker di VPS:**
+    ```bash
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    ```
+2.  **Clone & Build Image:**
+    ```bash
+    git clone https://github.com/Muhammad-Ikhwan-Fathulloh/Project-Machine-Learning-Volcano.git
+    cd Project-Machine-Learning-Volcano
+    docker build -t volcano-classifier .
+    ```
+3.  **Jalankan Container:**
+    ```bash
+    docker run -d --name volcano-api --restart always -p 8000:8000 volcano-classifier
+    ```
+4.  **Konfigurasi Nginx (Optional):**
+    Buat file `/etc/nginx/sites-available/volcano-api`:
+    ```nginx
+    server {
+        listen 80;
+        server_name domain-anda.com;
+
+        location / {
+            proxy_pass http://localhost:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+    ```
+    Aktifkan: `sudo ln -s /etc/nginx/sites-available/volcano-api /etc/nginx/sites-enabled/ && sudo systemctl restart nginx`
+
+### 7. Deploy ke Sanberlify.app
 Sanberlify (platform Sanbercode) mendukung deployment berbasis Git.
 
 1.  Pastikan file `requirements.txt` dan `main.py` berada di root repository.
