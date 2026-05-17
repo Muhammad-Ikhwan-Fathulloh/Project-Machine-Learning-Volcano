@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volcano AI Classifier Hub</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Link to Separated External Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Link to Separated External Client Script -->
+    <script src="app.js" defer></script>
+</head>
+<body>
+
+    <div class="container">
+        
+        <!-- Header -->
+        <header class="glass-card">
+            <div class="brand">
+                <i class="fa-solid fa-volcano"></i>
+                <div>
+                    <h1>Volcano AI Classifier Hub</h1>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">
+                        AWS Free Tier & Active Retraining Control Panel
+                    </span>
+                </div>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot" id="api-status-dot"></div>
+                <span id="api-status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="dashboard-grid">
+            
+            <!-- LEFT COLUMN: Inference & Data Intake -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                
+                <!-- Inference Form -->
+                <div class="glass-card">
+                    <h2><i class="fa-solid fa-bullseye"></i> Volcano Classifier</h2>
+                    
+                    <form id="predict-form" onsubmit="event.preventDefault(); predictVolcano();">
+                        <div class="form-group">
+                            <label for="p-tinggi">Height (Tinggi Meter)</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-arrows-up-down"></i>
+                                <input type="number" id="p-tinggi" class="form-control" placeholder="e.g. 1500" required min="1" max="10000" step="any">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="p-lat">Latitude (S/N)</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-globe"></i>
+                                <input type="number" id="p-lat" class="form-control" placeholder="e.g. -7.025" required min="-90" max="90" step="any">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="p-lon">Longitude (E/W)</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-map-pin"></i>
+                                <input type="number" id="p-lon" class="form-control" placeholder="e.g. 110.358" required min="-180" max="180" step="any">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn" id="predict-submit-btn">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Predict Shape
+                        </button>
+                    </form>
+
+                    <!-- Prediction Result output -->
+                    <div class="result-box" id="predict-result-box">
+                        <div class="result-title">Predicted Volcano Shape</div>
+                        <div class="result-value">
+                            <i class="fa-solid fa-circle-check"></i> 
+                            <span id="res-shape">-</span>
+                        </div>
+                        <div class="confidence-container">
+                            <div class="confidence-header">
+                                <span>Confidence</span>
+                                <span id="res-conf">0%</span>
+                            </div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" id="res-conf-bar"></div>
+                            </div>
+                        </div>
+                        <div id="res-log-id" style="font-size: 0.65rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; word-break: break-all;">
+                            ID: -
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Custom Intake Form -->
+                <div class="glass-card">
+                    <h2><i class="fa-solid fa-circle-plus"></i> Add Training Sample</h2>
+                    
+                    <form id="add-data-form" onsubmit="event.preventDefault(); addTrainingSample();">
+                        <div class="form-group">
+                            <label for="t-tinggi">Height (Tinggi Meter)</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-arrows-up-down"></i>
+                                <input type="number" id="t-tinggi" class="form-control" placeholder="e.g. 2801" required min="1" max="10000" step="any">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="t-lat">Latitude</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-globe"></i>
+                                <input type="number" id="t-lat" class="form-control" placeholder="e.g. 4.914" required min="-90" max="90" step="any">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="t-lon">Longitude</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-map-pin"></i>
+                                <input type="number" id="t-lon" class="form-control" placeholder="e.g. 96.329" required min="-180" max="180" step="any">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="t-bentuk">Volcano Shape (Bentuk)</label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-mountain"></i>
+                                <select id="t-bentuk" class="form-control" required style="padding-right: 2rem;">
+                                    <option value="" disabled selected>Select Shape Class</option>
+                                    <option value="stratovulkan">stratovulkan</option>
+                                    <option value="kompleks">kompleks</option>
+                                    <option value="kaldera">kaldera</option>
+                                    <option value="perisai">perisai</option>
+                                    <option value="kubah lava">kubah lava</option>
+                                    <option value="kerucut bara">kerucut bara</option>
+                                    <option value="bawah laut">bawah laut</option>
+                                    <option value="Fumarol">Fumarol</option>
+                                    <option value="supervulkan">supervulkan</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-secondary" id="add-data-submit-btn">
+                            <i class="fa-solid fa-database"></i> Add to DynamoDB
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+
+            <!-- MIDDLE COLUMN: Retraining Suite & Metrics -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                
+                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column;">
+                    <h2><i class="fa-solid fa-rotate"></i> Retraining Pipeline Control</h2>
+                    
+                    <div class="retrain-panel">
+                        <div class="radar-spinner" id="retrain-spinner">
+                            <i class="fa-solid fa-microchip"></i>
+                        </div>
+                        <div style="text-align: center;">
+                            <h3 id="retrain-status-text" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem;">
+                                Model Ready
+                            </h3>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); max-width: 320px; margin: 0 auto 1.25rem auto;">
+                                Triggers retraining on the baseline dataset combined with your custom labeled DynamoDB coordinates. Retrained model is uploaded directly to S3 and hot-reloaded!
+                            </p>
+                            <button class="btn" id="retrain-btn" onclick="triggerRetraining()">
+                                <i class="fa-solid fa-play"></i> Trigger Model Retraining
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Retrain Code block outputs -->
+                    <div class="code-output" id="retrain-code-output"></div>
+
+                    <!-- Metrics Table -->
+                    <table class="metrics-table" id="retrain-metrics-table">
+                        <thead>
+                            <tr>
+                                <th>Class Shape</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1-Score</th>
+                                <th>Support</th>
+                            </tr>
+                        </thead>
+                        <tbody id="retrain-metrics-tbody"></tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <!-- RIGHT COLUMN: Real-Time DynamoDB Dataset Logs -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                
+                <div class="glass-card" style="flex: 1; display: flex; flex-direction: column;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.5rem;">
+                        <h2 style="border: none; margin: 0; padding: 0;"><i class="fa-solid fa-list-check"></i> Dataset & prediction Logs</h2>
+                        <button onclick="fetchLogs()" class="btn btn-secondary" style="width: auto; padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                        </button>
+                    </div>
+                    
+                    <div class="logs-container" id="logs-container">
+                        <!-- Loading State -->
+                        <div style="text-align: center; padding: 3rem 0; color: var(--text-secondary);" id="logs-loading">
+                            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.75rem;"></i>
+                            <p>Loading database logs...</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Alert Toast element -->
+    <div class="toast" id="toast">
+        <i class="fa-solid toast-icon" id="toast-icon"></i>
+        <span id="toast-message">-</span>
+    </div>
+
+</body>
+</html>
