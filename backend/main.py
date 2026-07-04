@@ -18,16 +18,25 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # ============================================
-# CONFIGURATION - FIX PORT CONFLICT
+# CONFIGURATION - SINGLE PORT SOURCE
 # ============================================
 
-PORT = int(os.getenv('PORT', 5000))
+# Get port from environment with fallback to 5000
+PORT = int(os.getenv('PORT', '5000'))
 MODEL_PATH = os.getenv('MODEL_PATH', 'volcano_classifier_model.joblib')
 ENCODER_PATH = os.getenv('ENCODER_PATH', 'volcano_label_encoder.joblib')
+
+# Force PORT environment variable for consistency
+os.environ['PORT'] = str(PORT)
+
+logger.info(f"🔧 Configured PORT: {PORT}")
 
 # ============================================
 # DATA MODELS (Pydantic)
@@ -70,6 +79,7 @@ class HealthResponse(BaseModel):
     mode: str
     aws_enabled: bool
     port: int
+    container: str = "docker"
 
 class TrainingDataInput(BaseModel):
     """Manual training data input"""
@@ -280,6 +290,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 STARTING VOLCANO CLASSIFIER API")
     logger.info("=" * 50)
     logger.info(f"📍 Port: {PORT}")
+    logger.info(f"📁 Working Directory: {os.getcwd()}")
     
     # Initialize AWS storage (if available)
     try:
@@ -763,7 +774,7 @@ async def retrain_model():
         )
 
 # ============================================
-# RUN APP
+# RUN APP - SINGLE ENTRY POINT
 # ============================================
 
 if __name__ == "__main__":
@@ -773,14 +784,18 @@ if __name__ == "__main__":
     # Get port from environment or use default
     port = int(os.getenv('PORT', 5000))
     
-    print("=" * 50)
-    print(f"🚀 Starting Volcano Classifier API on port {port}")
-    print("=" * 50)
+    print("=" * 60)
+    print(f"🚀 Starting Volcano Classifier API")
+    print(f"📍 Port: {port}")
+    print(f"📁 Working Directory: {os.getcwd()}")
+    print("=" * 60)
     
+    # Run with consistent port
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=port,
         reload=False,
-        log_level="info"
+        log_level="info",
+        access_log=True
     )
