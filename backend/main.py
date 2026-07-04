@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================
-# CONFIGURATION
+# CONFIGURATION - FIX PORT CONFLICT
 # ============================================
 
 PORT = int(os.getenv('PORT', 5000))
@@ -69,7 +69,7 @@ class HealthResponse(BaseModel):
     model_file: str
     mode: str
     aws_enabled: bool
-    container: str = "docker"
+    port: int
 
 class TrainingDataInput(BaseModel):
     """Manual training data input"""
@@ -277,8 +277,9 @@ async def lifespan(app: FastAPI):
     global model, label_encoder, is_ready
     
     logger.info("=" * 50)
-    logger.info("🚀 STARTING VOLCANO CLASSIFIER API IN DOCKER")
+    logger.info("🚀 STARTING VOLCANO CLASSIFIER API")
     logger.info("=" * 50)
+    logger.info(f"📍 Port: {PORT}")
     
     # Initialize AWS storage (if available)
     try:
@@ -345,6 +346,7 @@ async def root():
         "version": "1.0.0",
         "mode": "AWS" if aws_service.AWS_ENABLED else "Local",
         "status": "ready" if is_ready else "loading",
+        "port": PORT,
         "endpoints": "/predict, /predict/batch, /health, /info, /logs, /add-training-data, /verify-prediction, /retrain"
     }
 
@@ -357,7 +359,7 @@ async def health_check():
         model_file=MODEL_PATH,
         mode="AWS" if aws_service.AWS_ENABLED else "Local",
         aws_enabled=aws_service.AWS_ENABLED,
-        container="docker"
+        port=PORT
     )
 
 @app.get("/ready")
@@ -365,7 +367,8 @@ async def ready():
     """Kubernetes readiness probe"""
     return {
         "ready": is_ready,
-        "model_loaded": is_ready
+        "model_loaded": is_ready,
+        "port": PORT
     }
 
 @app.get("/live")
@@ -373,7 +376,8 @@ async def live():
     """Kubernetes liveness probe"""
     return {
         "alive": True,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "port": PORT
     }
 
 @app.get("/info")
@@ -394,7 +398,7 @@ async def get_info():
         "has_probability": hasattr(model, 'predict_proba') if model else False,
         "mode": "AWS" if aws_service.AWS_ENABLED else "Local",
         "classes": list(label_encoder.classes_) if label_encoder else [],
-        "container": "docker"
+        "port": PORT
     }
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -586,7 +590,7 @@ async def predict_form(
         )
 
 # ============================================
-# ADDITIONAL ENDPOINTS (with error handling)
+# ADDITIONAL ENDPOINTS
 # ============================================
 
 @app.post("/add-training-data")
@@ -759,14 +763,24 @@ async def retrain_model():
         )
 
 # ============================================
-# RUN APP (for local development)
+# RUN APP
 # ============================================
 
 if __name__ == "__main__":
     import uvicorn
+    import sys
+    
+    # Get port from environment or use default
+    port = int(os.getenv('PORT', 5000))
+    
+    print("=" * 50)
+    print(f"🚀 Starting Volcano Classifier API on port {port}")
+    print("=" * 50)
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=PORT,
-        reload=False  # Set to False for production
+        port=port,
+        reload=False,
+        log_level="info"
     )
