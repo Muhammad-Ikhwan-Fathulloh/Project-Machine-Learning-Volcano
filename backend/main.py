@@ -1,18 +1,32 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field, validator
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any, Optional
 import joblib
 import pandas as pd
 import numpy as np
 import uuid
 import json
+import os
+import re
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import aws_service
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report
+
+# ============================================
+# CONFIGURATION
+# ============================================
+
+PORT = int(os.getenv('PORT', 5000))
 
 origins = [
-    "*"
+    # "http://localhost",
+    # "http://localhost:5000",
+    # "http://127.0.0.1:5000",
+    "*"  # For development
 ]
 
 # ============================================
@@ -53,6 +67,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_file: str
+    aws_enabled: bool
 
 class TrainingDataInput(BaseModel):
     """Manual training data input"""
@@ -80,45 +95,127 @@ feature_columns = ['tinggi_meter', 'lat', 'lon']
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize S3/DynamoDB resources and load model
+    # Startup: Initialize resources and load model
     global model, label_encoder
     print("=" * 50)
-    print("INITIALIZING AWS RESOURCES...")
+    print("INITIALIZING VOLCANO CLASSIFIER API")
     print("=" * 50)
     
-    # Check/Create DynamoDB Table, S3 Bucket, SNS Topic, SQS Queue
-    aws_service.init_resources()
+    # Check AWS configuration
+    if aws_service.AWS_ENABLED:
+        print("✅ AWS services available")
+        # Check/Create DynamoDB Table, S3 Bucket, SNS Topic, SQS Queue
+        aws_service.init_resources()
+    else:
+        print("ℹ️ Running in LOCAL mode (AWS not configured)")
+        print("   - Data will be stored in local JSON files")
+        print("   - All AWS operations will be simulated")
     
     print("=" * 50)
     print("LOADING MODEL & LABEL ENCODER...")
     print("=" * 50)
     
-    # Try downloading the latest model from S3
+    # Try downloading the latest model from S3 or use local
     aws_service.download_model_from_s3('volcano_classifier_model.joblib', 'volcano_classifier_model.joblib')
     aws_service.download_model_from_s3('volcano_label_encoder.joblib', 'volcano_label_encoder.joblib')
     
+    # Load model
     try:
-        model = joblib.load('volcano_classifier_model.joblib')
-        print("✅ Model loaded successfully!")
-        print(f"📊 Model type: {type(model).__name__}")
+        if os.path.exists('volcano_classifier_model.joblib'):
+            model = joblib.load('volcano_classifier_model.joblib')
+            print("✅ Model loaded successfully!")
+            print(f"📊 Model type: {type(model).__name__}")
+        else:
+            print("⚠️ Model file not found. Training a default model...")
+            model = train_default_model()
     except Exception as e:
         print(f"❌ Failed to load model: {e}")
-        model = None
+        print("🔄 Training a new default model...")
+        model = train_default_model()
         
+    # Load label encoder
     try:
-        label_encoder = joblib.load('volcano_label_encoder.joblib')
-        print("✅ Label Encoder loaded successfully!")
-        print(f"🏷️ Classes: {list(label_encoder.classes_)}")
+        if os.path.exists('volcano_label_encoder.joblib'):
+            label_encoder = joblib.load('volcano_label_encoder.joblib')
+            print("✅ Label Encoder loaded successfully!")
+            print(f"🏷️ Classes: {list(label_encoder.classes_)}")
+        else:
+            print("ℹ️ Label Encoder not found, creating default...")
+            label_encoder = create_default_label_encoder()
     except Exception as e:
         print(f"ℹ️ Label Encoder not loaded (will use fallback mapping): {e}")
-        label_encoder = None
+        label_encoder = create_default_label_encoder()
         
+    print("=" * 50)
+    print("🚀 API READY!")
+    print(f"📍 Running on http://localhost:{PORT}")
+    print(f"📚 Documentation: http://localhost:{PORT}/docs")
     print("=" * 50)
     
     yield
     
     # Shutdown: Cleanup
     print("Shutting down...")
+
+def train_default_model():
+    """Train a default model if no model file exists"""
+    try:
+        # Load default dataset
+        url = 'https://raw.githubusercontent.com/yogski/indonesian_public_data/master/csv/indonesia_volcanoes.csv'
+        df = pd.read_csv(url)
+        
+        # Preprocess
+        df['tinggi_meter'] = df['tinggi_meter'].astype(str).str.extract('(\d+)').astype(float)
+        
+        def extract_coordinates(geolokasi_str):
+            if pd.isna(geolokasi_str):
+                return np.nan, np.nan
+            match = re.search(r'([-+]?\d+\.?\d*)°([NS])\s+([-+]?\d+\.?\d*)°([EW])',
+                              str(geolokasi_str), re.IGNORECASE)
+            if match:
+                lat_val = float(match.group(1))
+                lat_dir = match.group(2).upper()
+                lon_val = float(match.group(3))
+                lon_dir = match.group(4).upper()
+                latitude = lat_val if lat_dir == 'N' else -lat_val
+                longitude = lon_val if lon_dir == 'E' else -lon_val
+                return latitude, longitude
+            return np.nan, np.nan
+
+        df[['lat', 'lon']] = df['geolokasi'].apply(lambda x: pd.Series(extract_coordinates(x)))
+        df_cleaned = df.dropna().copy()
+        df_final = df_cleaned[['tinggi_meter', 'lat', 'lon', 'bentuk']].copy()
+        
+        # Train
+        X = df_final[['tinggi_meter', 'lat', 'lon']]
+        y = df_final['bentuk']
+        
+        new_label_encoder = LabelEncoder()
+        y_encoded = new_label_encoder.fit_transform(y)
+        
+        new_model = RandomForestClassifier(random_state=42)
+        new_model.fit(X, y_encoded)
+        
+        # Save
+        joblib.dump(new_model, 'volcano_classifier_model.joblib')
+        joblib.dump(new_label_encoder, 'volcano_label_encoder.joblib')
+        
+        print("✅ Default model trained and saved!")
+        return new_model
+    except Exception as e:
+        print(f"❌ Failed to train default model: {e}")
+        # Create a dummy model as last resort
+        return RandomForestClassifier(random_state=42)
+
+def create_default_label_encoder():
+    """Create default label encoder with known classes"""
+    classes = [
+        'Fumarol', 'bawah laut', 'kaldera', 'kerucut bara', 
+        'kompleks', 'kubah lava', 'perisai', 'stratovulkan', 'supervulkan'
+    ]
+    le = LabelEncoder()
+    le.fit(classes)
+    return le
 
 # ============================================
 # INITIALIZE FASTAPI APP
@@ -163,11 +260,6 @@ def predict_single(height: float, lat: float, lon: float):
     probabilities = model.predict_proba(input_data)[0]
     confidence = float(np.max(probabilities))
     
-    # Note: Since we don't have label_encoder from notebook,
-    # we need to extract classes from model or define manually
-    # For now, we'll return the encoded value and you can map it later
-    # Alternatively, train and save label_encoder separately
-    
     return prediction_encoded, confidence
 
 def get_class_name(encoded_class: int) -> str:
@@ -181,7 +273,7 @@ def get_class_name(encoded_class: int) -> str:
         except Exception:
             pass
 
-    # These are the classes from the original notebook
+    # Fallback classes
     classes = [
         'Fumarol', 'bawah laut', 'kaldera', 'kerucut bara', 
         'kompleks', 'kubah lava', 'perisai', 'stratovulkan', 'supervulkan'
@@ -201,7 +293,8 @@ async def root():
     return {
         "message": "Volcano Shape Classifier API",
         "version": "1.0.0",
-        "endpoints": "/predict, /predict/batch, /health, /info"
+        "mode": "AWS" if aws_service.AWS_ENABLED else "Local",
+        "endpoints": "/predict, /predict/batch, /health, /info, /logs, /add-training-data, /verify-prediction, /retrain"
     }
 
 @app.get("/health", response_model=HealthResponse)
@@ -210,7 +303,8 @@ async def health_check():
     return HealthResponse(
         status="healthy" if model is not None else "unhealthy",
         model_loaded=model is not None,
-        model_file="volcano_classifier_model.joblib"
+        model_file="volcano_classifier_model.joblib",
+        aws_enabled=aws_service.AWS_ENABLED
     )
 
 @app.get("/info")
@@ -228,13 +322,14 @@ async def get_info():
         "features": feature_columns,
         "n_features": len(feature_columns),
         "is_trained": hasattr(model, 'predict'),
-        "has_probability": hasattr(model, 'predict_proba')
+        "has_probability": hasattr(model, 'predict_proba'),
+        "mode": "AWS" if aws_service.AWS_ENABLED else "Local"
     }
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_volcano(volcano: VolcanoInput):
     """
-    Predict volcano shape for a single volcano and log to S3/DynamoDB/SQS/SNS/CloudWatch
+    Predict volcano shape for a single volcano and log to S3/DynamoDB
     
     Example request:
     {
@@ -263,7 +358,7 @@ async def predict_volcano(volcano: VolcanoInput):
         # Generate unique prediction ID
         pred_id = str(uuid.uuid4())
         
-        # 1. Log to DynamoDB Volcano_Dataset table (is_training_sample = False)
+        # Log to DynamoDB or local storage
         aws_service.log_inference_to_dynamodb(
             pred_id,
             volcano.tinggi_meter,
@@ -273,7 +368,7 @@ async def predict_volcano(volcano: VolcanoInput):
             confidence
         )
         
-        # 2. Push log payload to SQS Queue
+        # Push to SQS queue or log locally
         sqs_payload = {
             "id": pred_id,
             "tinggi_meter": float(volcano.tinggi_meter),
@@ -285,10 +380,10 @@ async def predict_volcano(volcano: VolcanoInput):
         }
         aws_service.push_to_queue(json.dumps(sqs_payload))
         
-        # 3. Log metric to CloudWatch
+        # Log metric to CloudWatch or locally
         aws_service.log_metric("PredictionConfidence", confidence)
         
-        # 4. Trigger alert warning via SNS (and Telegram if configured) on low confidence
+        # Trigger alert warning on low confidence
         if confidence < 0.5:
             warning_msg = f"Low confidence volcano prediction warning!\nID: {pred_id}\nCoordinates: {volcano.lat}, {volcano.lon}\nHeight: {volcano.tinggi_meter}m\nPredicted: {prediction_class}\nConfidence: {round(confidence * 100, 2)}%"
             aws_service.send_alert(warning_msg)
@@ -344,7 +439,7 @@ async def predict_batch(batch: VolcanoBatchInput):
             prediction_class = get_class_name(prediction_encoded)
             pred_id = str(uuid.uuid4())
             
-            # Log individual inference to DynamoDB and SQS
+            # Log individual inference
             aws_service.log_inference_to_dynamodb(
                 pred_id,
                 volcano.tinggi_meter,
@@ -416,7 +511,7 @@ async def predict_form(
         prediction_class = get_class_name(prediction_encoded)
         pred_id = str(uuid.uuid4())
         
-        # Log to DynamoDB and SQS
+        # Log to storage
         aws_service.log_inference_to_dynamodb(
             pred_id,
             tinggi_meter,
@@ -456,7 +551,7 @@ async def predict_form(
         )
 
 # ============================================
-# NEW AWS DATASET & RETRAINING ENDPOINTS
+# AWS DATASET & RETRAINING ENDPOINTS
 # ============================================
 
 @app.post("/add-training-data")
@@ -479,7 +574,7 @@ async def add_training_data(data: TrainingDataInput):
             }
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save training sample to DynamoDB."
+            detail="Failed to save training sample."
         )
     except Exception as e:
         raise HTTPException(
@@ -490,7 +585,7 @@ async def add_training_data(data: TrainingDataInput):
 @app.post("/verify-prediction")
 async def verify_prediction(data: VerifyLogInput):
     """
-    Verify/correct a past prediction log and promote it to a training sample in DynamoDB
+    Verify/correct a past prediction log and promote it to a training sample
     """
     try:
         success = aws_service.verify_prediction_log(data.id, data.bentuk)
@@ -512,7 +607,7 @@ async def verify_prediction(data: VerifyLogInput):
 @app.get("/logs")
 async def get_logs():
     """
-    Retrieve all prediction logs and verified training samples from DynamoDB
+    Retrieve all prediction logs and verified training samples
     """
     try:
         logs = aws_service.get_all_logs_from_dynamodb()
@@ -536,8 +631,8 @@ async def get_logs():
 @app.post("/retrain")
 async def retrain_model():
     """
-    Retrain the RandomForestClassifier on public data + custom DynamoDB verified training data,
-    save the updated model and label encoder to S3, and hot-reload them in-memory.
+    Retrain the RandomForestClassifier on public data + custom verified training data,
+    save the updated model and label encoder, and hot-reload them in-memory.
     """
     global model, label_encoder
     try:
@@ -548,11 +643,8 @@ async def retrain_model():
         df = pd.read_csv(url)
         
         # 2. Preprocess baseline dataset
-        # Clean tinggi_meter
         df['tinggi_meter'] = df['tinggi_meter'].astype(str).str.extract('(\d+)').astype(float)
         
-        # Extract lat/lon from geolokasi
-        import re
         def extract_coordinates(geolokasi_str):
             if pd.isna(geolokasi_str):
                 return np.nan, np.nan
@@ -569,15 +661,12 @@ async def retrain_model():
             return np.nan, np.nan
 
         df[['lat', 'lon']] = df['geolokasi'].apply(lambda x: pd.Series(extract_coordinates(x)))
-        df = df.drop(columns=['geolokasi'])
         df_cleaned = df.dropna().copy()
-        
-        # Keep features & shapes
         df_final = df_cleaned[['tinggi_meter', 'lat', 'lon', 'bentuk']].copy()
         
-        # 3. Retrieve verified training data from DynamoDB
+        # 3. Retrieve verified training data
         db_items = aws_service.get_training_samples_from_dynamodb()
-        print(f"📥 Found {len(db_items)} verified custom training samples in DynamoDB.")
+        print(f"📥 Found {len(db_items)} verified custom training samples.")
         
         if db_items:
             custom_records = []
@@ -590,19 +679,17 @@ async def retrain_model():
                 })
             df_custom = pd.DataFrame(custom_records)
             df_final = pd.concat([df_final, df_custom], ignore_index=True)
-            print("✅ Merged baseline data with custom DynamoDB samples.")
+            print("✅ Merged baseline data with custom training samples.")
         
         # 4. Define features (X) and target (y)
         X = df_final[['tinggi_meter', 'lat', 'lon']]
         y = df_final['bentuk']
         
         # 5. Label Encode the shapes
-        from sklearn.preprocessing import LabelEncoder
         new_label_encoder = LabelEncoder()
         y_encoded = new_label_encoder.fit_transform(y)
         
         # 6. Fit the RandomForestClassifier model
-        from sklearn.ensemble import RandomForestClassifier
         new_model = RandomForestClassifier(random_state=42)
         new_model.fit(X, y_encoded)
         
@@ -613,17 +700,16 @@ async def retrain_model():
         joblib.dump(new_model, 'volcano_classifier_model.joblib')
         joblib.dump(new_label_encoder, 'volcano_label_encoder.joblib')
         
-        # 8. Upload files to S3
+        # 8. Upload files to S3 if available
         aws_service.upload_model_to_s3('volcano_classifier_model.joblib', 'volcano_classifier_model.joblib')
         aws_service.upload_model_to_s3('volcano_label_encoder.joblib', 'volcano_label_encoder.joblib')
         
         # 9. Hot-reload model into FastAPI active state
         model = new_model
         label_encoder = new_label_encoder
-        print("🚀 Model successfully retrained, saved to S3, and hot-reloaded into memory!")
+        print("🚀 Model successfully retrained, saved, and hot-reloaded into memory!")
         
         # 10. Generate classification report
-        from sklearn.metrics import classification_report
         y_pred = model.predict(X)
         report = classification_report(y_encoded, y_pred, target_names=list(label_encoder.classes_), output_dict=True, zero_division=0)
         
@@ -646,3 +732,21 @@ async def retrain_model():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Retraining failed: {str(e)}"
         )
+
+# ============================================
+# RUN APP
+# ============================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    print(f"🚀 Starting Volcano Classifier API on port {PORT}")
+    print(f"📚 API Documentation available at http://localhost:{PORT}/docs")
+    print(f"🔧 Mode: {'AWS' if aws_service.AWS_ENABLED else 'Local (No AWS)'}")
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=True
+    )
