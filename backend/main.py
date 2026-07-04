@@ -9,6 +9,8 @@ import json
 import os
 import re
 import logging
+import signal
+import sys
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,18 +27,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================
-# CONFIGURATION - SINGLE PORT SOURCE
+# CONFIGURATION
 # ============================================
 
-# Get port from environment with fallback to 5000
 PORT = int(os.getenv('PORT', '5000'))
 MODEL_PATH = os.getenv('MODEL_PATH', 'volcano_classifier_model.joblib')
 ENCODER_PATH = os.getenv('ENCODER_PATH', 'volcano_label_encoder.joblib')
-
-# Force PORT environment variable for consistency
-os.environ['PORT'] = str(PORT)
-
-logger.info(f"🔧 Configured PORT: {PORT}")
 
 # ============================================
 # DATA MODELS (Pydantic)
@@ -79,12 +75,11 @@ class HealthResponse(BaseModel):
     mode: str
     aws_enabled: bool
     port: int
-    container: str = "docker"
 
 class TrainingDataInput(BaseModel):
     """Manual training data input"""
     tinggi_meter: float = Field(..., ge=0, le=10000, description="Height in meters")
-    lat: float = Field(..., ge=-90, le=90, description="Latitude")
+    lat: float = Field(..., ge=-90, le=90, description="Longitude")
     lon: float = Field(..., ge=-180, le=180, description="Longitude")
     bentuk: str = Field(..., description="Actual shape class of the volcano")
 
@@ -101,6 +96,22 @@ model = None
 label_encoder = None
 feature_columns = ['tinggi_meter', 'lat', 'lon']
 is_ready = False
+should_exit = False
+
+# ============================================
+# SIGNAL HANDLERS
+# ============================================
+
+def signal_handler(sig, frame):
+    """Handle shutdown signals gracefully"""
+    global should_exit
+    logger.info(f"📡 Received signal {sig}")
+    should_exit = True
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # ============================================
 # HELPER FUNCTIONS
@@ -114,10 +125,9 @@ def load_or_train_model():
     logger.info("📦 LOADING/TRAINING MODEL...")
     logger.info("=" * 50)
     
-    # Try to load existing model
     model_loaded = False
     
-    # Check if model exists
+    # Try to load existing model
     if os.path.exists(MODEL_PATH):
         try:
             model = joblib.load(MODEL_PATH)
@@ -143,7 +153,6 @@ def load_or_train_model():
             logger.info("✅ New model trained and saved")
         except Exception as e:
             logger.error(f"❌ Failed to train model: {e}")
-            # Create dummy model as last resort
             model = create_dummy_model()
             label_encoder = create_default_label_encoder()
             logger.warning("⚠️ Using dummy model as fallback")
@@ -161,12 +170,10 @@ def train_default_model():
     """Train a default model from public dataset"""
     try:
         logger.info("📚 Downloading training data...")
-        # Load default dataset
         url = 'https://raw.githubusercontent.com/yogski/indonesian_public_data/master/csv/indonesia_volcanoes.csv'
         df = pd.read_csv(url)
         logger.info(f"✅ Downloaded {len(df)} records")
         
-        # Preprocess
         df['tinggi_meter'] = df['tinggi_meter'].astype(str).str.extract('(\d+)').astype(float)
         
         def extract_coordinates(geolokasi_str):
@@ -190,7 +197,6 @@ def train_default_model():
         
         df_final = df_cleaned[['tinggi_meter', 'lat', 'lon', 'bentuk']].copy()
         
-        # Train
         X = df_final[['tinggi_meter', 'lat', 'lon']]
         y = df_final['bentuk']
         
@@ -200,7 +206,6 @@ def train_default_model():
         new_model = RandomForestClassifier(random_state=42, n_estimators=100)
         new_model.fit(X, y_encoded)
         
-        # Save
         joblib.dump(new_model, MODEL_PATH)
         joblib.dump(new_label_encoder, ENCODER_PATH)
         
@@ -216,7 +221,6 @@ def create_dummy_model():
     """Create a dummy model as fallback"""
     logger.warning("⚠️ Creating dummy model as fallback")
     dummy_model = RandomForestClassifier(random_state=42)
-    # Create dummy training data
     X_dummy = np.array([[1000, 0, 0], [2000, 0, 0], [3000, 0, 0]])
     y_dummy = np.array([0, 1, 2])
     dummy_model.fit(X_dummy, y_dummy)
@@ -242,18 +246,13 @@ def predict_single(height: float, lat: float, lon: float):
     if model is None:
         raise RuntimeError("Model not loaded")
     
-    # Create DataFrame with correct feature order
     input_data = pd.DataFrame([[height, lat, lon]], columns=feature_columns)
-    
-    # Make prediction
     prediction_encoded = model.predict(input_data)[0]
     
-    # Get confidence (probability)
     try:
         probabilities = model.predict_proba(input_data)[0]
         confidence = float(np.max(probabilities))
     except:
-        # If model doesn't have predict_proba
         confidence = 0.5
     
     return prediction_encoded, confidence
@@ -268,7 +267,6 @@ def get_class_name(encoded_class: int) -> str:
         except Exception:
             pass
 
-    # Fallback classes
     classes = [
         'Fumarol', 'bawah laut', 'kaldera', 'kerucut bara', 
         'kompleks', 'kubah lava', 'perisai', 'stratovulkan', 'supervulkan'
@@ -292,7 +290,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"📍 Port: {PORT}")
     logger.info(f"📁 Working Directory: {os.getcwd()}")
     
-    # Initialize AWS storage (if available)
     try:
         aws_service.init_resources()
         logger.info(f"📌 Mode: {'AWS' if aws_service.AWS_ENABLED else 'LOCAL'}")
@@ -304,7 +301,6 @@ async def lifespan(app: FastAPI):
     
     logger.info("=" * 50)
     
-    # Load or train model
     try:
         load_or_train_model()
         is_ready = model is not None
@@ -323,7 +319,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
     logger.info("🛑 Shutting down...")
 
 # ============================================
@@ -363,7 +358,7 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - simple and fast"""
     return HealthResponse(
         status="healthy" if is_ready else "unhealthy",
         model_loaded=is_ready,
@@ -424,20 +419,15 @@ async def predict_volcano(volcano: VolcanoInput):
         )
     
     try:
-        # Make prediction
         prediction_encoded, confidence = predict_single(
             volcano.tinggi_meter,
             volcano.lat,
             volcano.lon
         )
         
-        # Get class name
         prediction_class = get_class_name(prediction_encoded)
-        
-        # Generate unique prediction ID
         pred_id = str(uuid.uuid4())
         
-        # Log to storage (if available)
         try:
             aws_service.log_inference_to_dynamodb(
                 pred_id,
@@ -450,7 +440,6 @@ async def predict_volcano(volcano: VolcanoInput):
         except Exception as e:
             logger.warning(f"⚠️ Failed to log inference: {e}")
         
-        # Push to SQS queue or log locally
         sqs_payload = {
             "id": pred_id,
             "tinggi_meter": float(volcano.tinggi_meter),
@@ -465,13 +454,11 @@ async def predict_volcano(volcano: VolcanoInput):
         except Exception as e:
             logger.warning(f"⚠️ Failed to push to queue: {e}")
         
-        # Log metric
         try:
             aws_service.log_metric("PredictionConfidence", confidence, "Percent")
         except Exception as e:
             logger.warning(f"⚠️ Failed to log metric: {e}")
         
-        # Trigger alert warning on low confidence
         if confidence < 0.5:
             warning_msg = f"Low confidence volcano prediction warning!\nID: {pred_id}\nCoordinates: {volcano.lat}, {volcano.lon}\nHeight: {volcano.tinggi_meter}m\nPredicted: {prediction_class}\nConfidence: {round(confidence * 100, 2)}%"
             try:
@@ -522,7 +509,6 @@ async def predict_batch(batch: VolcanoBatchInput):
             prediction_class = get_class_name(prediction_encoded)
             pred_id = str(uuid.uuid4())
             
-            # Log individual inference
             try:
                 aws_service.log_inference_to_dynamodb(
                     pred_id,
@@ -678,11 +664,9 @@ async def retrain_model():
     try:
         logger.info("🔄 Retraining pipeline initiated...")
         
-        # Load training data
         url = 'https://raw.githubusercontent.com/yogski/indonesian_public_data/master/csv/indonesia_volcanoes.csv'
         df = pd.read_csv(url)
         
-        # Preprocess
         df['tinggi_meter'] = df['tinggi_meter'].astype(str).str.extract('(\d+)').astype(float)
         
         def extract_coordinates(geolokasi_str):
@@ -704,7 +688,6 @@ async def retrain_model():
         df_cleaned = df.dropna().copy()
         df_final = df_cleaned[['tinggi_meter', 'lat', 'lon', 'bentuk']].copy()
         
-        # Get custom training data
         try:
             db_items = aws_service.get_training_samples_from_dynamodb()
             logger.info(f"📥 Found {len(db_items)} verified custom training samples.")
@@ -723,7 +706,6 @@ async def retrain_model():
             df_custom = pd.DataFrame(custom_records)
             df_final = pd.concat([df_final, df_custom], ignore_index=True)
         
-        # Train
         X = df_final[['tinggi_meter', 'lat', 'lon']]
         y = df_final['bentuk']
         
@@ -735,18 +717,15 @@ async def retrain_model():
         
         score = float(new_model.score(X, y_encoded))
         
-        # Save
         joblib.dump(new_model, MODEL_PATH)
         joblib.dump(new_label_encoder, ENCODER_PATH)
         
-        # Upload to S3 if available
         try:
             aws_service.upload_model_to_s3(MODEL_PATH, MODEL_PATH)
             aws_service.upload_model_to_s3(ENCODER_PATH, ENCODER_PATH)
         except:
             pass
         
-        # Hot-reload
         model = new_model
         label_encoder = new_label_encoder
         is_ready = True
@@ -774,14 +753,12 @@ async def retrain_model():
         )
 
 # ============================================
-# RUN APP - SINGLE ENTRY POINT
+# RUN APP
 # ============================================
 
 if __name__ == "__main__":
     import uvicorn
-    import sys
     
-    # Get port from environment or use default
     port = int(os.getenv('PORT', 5000))
     
     print("=" * 60)
@@ -790,12 +767,13 @@ if __name__ == "__main__":
     print(f"📁 Working Directory: {os.getcwd()}")
     print("=" * 60)
     
-    # Run with consistent port
+    # Run with proper settings
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=port,
         reload=False,
         log_level="info",
-        access_log=True
+        access_log=True,
+        loop="asyncio"
     )
