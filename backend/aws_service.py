@@ -35,7 +35,7 @@ def is_aws_configured():
         test_client.list_buckets()
         return True
     except Exception as e:
-        print(f"⚠️ AWS/LocalStack not available: {e}")
+        print(f"[WARN] AWS/LocalStack not available: {e}")
         return False
 
 AWS_ENABLED = is_aws_configured()
@@ -78,12 +78,12 @@ class DummyAWSClient:
     def __init__(self, service_name):
         self.service_name = service_name
         self.logs = []
-        print(f"ℹ️ Running in LOCAL mode - {service_name} operations will be simulated")
+        print(f"[INFO] Running in LOCAL mode - {service_name} operations will be simulated")
     
     def __getattr__(self, name):
         def dummy_method(*args, **kwargs):
             # Log the operation
-            print(f"📝 LOCAL MODE: {self.service_name}.{name} called with {args}, {kwargs}")
+            print(f"[LOCAL] {self.service_name}.{name} called with {args}, {kwargs}")
             # Return dummy responses
             if name == 'list_buckets':
                 return {'Buckets': []}
@@ -118,7 +118,7 @@ class DummyAWSResource:
     def __init__(self, service_name):
         self.service_name = service_name
         self.tables = []
-        print(f"ℹ️ Running in LOCAL mode - {service_name} resources will be simulated")
+        print(f"[INFO] Running in LOCAL mode - {service_name} resources will be simulated")
     
     def __getattr__(self, name):
         if name == 'Table':
@@ -129,7 +129,7 @@ class DummyAWSResource:
                 
                 def put_item(self, Item):
                     self.items.append(Item)
-                    print(f"📝 LOCAL MODE: Saved item to {self.table_name}")
+                    print(f"[LOCAL] Saved item to {self.table_name}")
                     return {}
                 
                 def get_item(self, Key):
@@ -178,7 +178,7 @@ cloudwatch = get_aws_client('cloudwatch')
 def init_resources():
     """Create all AWS resources (S3, DynamoDB, SQS, SNS) if they do not exist"""
     if not AWS_ENABLED:
-        print("📁 Running in LOCAL mode - using simulated resources")
+        print("[INFO] Running in LOCAL mode - using simulated resources")
         print("   All data will be stored in memory")
         return
     
@@ -198,11 +198,11 @@ def init_resources():
                     AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
                     ProvisionedThroughput={'ReadCapacityUnits': 5, 'WriteCapacityUnits': 5}
                 )
-                print(f"✅ DynamoDB Table '{TABLE_NAME}' created.")
+                print(f"[OK] DynamoDB Table '{TABLE_NAME}' created.")
             except Exception as e:
-                print(f"⚠️ Could not create DynamoDB table: {e}")
+                print(f"[WARN] Could not create DynamoDB table: {e}")
         else:
-            print(f"ℹ️ DynamoDB Table '{TABLE_NAME}' already exists.")
+            print(f"[INFO] DynamoDB Table '{TABLE_NAME}' already exists.")
 
         # 2. S3 Bucket Initialization
         try:
@@ -216,56 +216,56 @@ def init_resources():
                         Bucket=BUCKET_NAME,
                         CreateBucketConfiguration={'LocationConstraint': AWS_REGION}
                     )
-                print(f"✅ S3 Bucket '{BUCKET_NAME}' created.")
+                print(f"[OK] S3 Bucket '{BUCKET_NAME}' created.")
             else:
-                print(f"ℹ️ S3 Bucket '{BUCKET_NAME}' already exists.")
+                print(f"[INFO] S3 Bucket '{BUCKET_NAME}' already exists.")
         except Exception as e:
-            print(f"⚠️ S3 bucket initialization warning: {e}")
+            print(f"[WARN] S3 bucket initialization warning: {e}")
 
         # 3. SNS Topic Initialization
         try:
             sns.create_topic(Name=TOPIC_NAME)
-            print(f"✅ SNS Topic '{TOPIC_NAME}' ensured.")
+            print(f"[OK] SNS Topic '{TOPIC_NAME}' ensured.")
         except Exception as e:
-            print(f"⚠️ SNS topic initialization warning: {e}")
+            print(f"[WARN] SNS topic initialization warning: {e}")
 
         # 4. SQS Queue Initialization
         try:
             sqs.create_queue(QueueName=QUEUE_NAME)
-            print(f"✅ SQS Queue '{QUEUE_NAME}' ensured.")
+            print(f"[OK] SQS Queue '{QUEUE_NAME}' ensured.")
         except Exception as e:
-            print(f"⚠️ SQS queue initialization warning: {e}")
+            print(f"[WARN] SQS queue initialization warning: {e}")
 
     except Exception as e:
-        print(f"❌ AWS Initialization Error: {e}")
+        print(f"[ERROR] AWS Initialization Error: {e}")
 
 # S3 Helpers
 def upload_model_to_s3(file_path, object_name):
     """Upload trained local model/label encoder files to S3 bucket"""
     if not AWS_ENABLED:
-        print(f"📝 LOCAL MODE: Would upload {object_name} to S3")
+        print(f"[LOCAL] Would upload {object_name} to S3")
         return True
     
     try:
         s3.upload_file(file_path, BUCKET_NAME, object_name)
-        print(f"✅ Successfully uploaded '{object_name}' to S3.")
+        print(f"[OK] Successfully uploaded '{object_name}' to S3.")
         return True
     except Exception as e:
-        print(f"❌ S3 Upload Error for '{object_name}': {e}")
+        print(f"[ERROR] S3 Upload Error for '{object_name}': {e}")
         return False
 
 def download_model_from_s3(file_path, object_name):
     """Download trained model/label encoder files from S3 bucket"""
     if not AWS_ENABLED:
-        print(f"📝 LOCAL MODE: Would download {object_name} from S3")
+        print(f"[LOCAL] Would download {object_name} from S3")
         return False
     
     try:
         s3.download_file(BUCKET_NAME, object_name, file_path)
-        print(f"✅ Successfully downloaded '{object_name}' from S3.")
+        print(f"[OK] Successfully downloaded '{object_name}' from S3.")
         return True
     except Exception as e:
-        print(f"ℹ️ Could not download '{object_name}' from S3 (might not exist yet): {e}")
+        print(f"[INFO] Could not download '{object_name}' from S3 (might not exist yet): {e}")
         return False
 
 # DynamoDB Operations
@@ -284,10 +284,10 @@ def log_inference_to_dynamodb(id_str, tinggi_meter, lat, lon, prediction, confid
             'timestamp': datetime.utcnow().isoformat()
         }
         table.put_item(Item=item)
-        print(f"✅ Inference logged to DynamoDB: {id_str}")
+        print(f"[OK] Inference logged to DynamoDB: {id_str}")
         return True
     except Exception as e:
-        print(f"❌ DynamoDB Log Inference Error: {e}")
+        print(f"[ERROR] DynamoDB Log Inference Error: {e}")
         # Fallback: log to file
         try:
             log_file = 'local_inference_logs.json'
@@ -298,7 +298,7 @@ def log_inference_to_dynamodb(id_str, tinggi_meter, lat, lon, prediction, confid
             existing.append(item)
             with open(log_file, 'w') as f:
                 json.dump(existing, f, indent=2, default=str)
-            print(f"📝 Inference logged to local file: {log_file}")
+            print(f"[LOCAL] Inference logged to local file: {log_file}")
         except:
             pass
         return False
@@ -318,10 +318,10 @@ def add_labeled_sample_to_dynamodb(tinggi_meter, lat, lon, bentuk):
             'timestamp': datetime.utcnow().isoformat()
         }
         table.put_item(Item=item)
-        print(f"✅ Labeled training sample added to DynamoDB: {id_str}")
+        print(f"[OK] Labeled training sample added to DynamoDB: {id_str}")
         return id_str
     except Exception as e:
-        print(f"❌ DynamoDB Add Labeled Sample Error: {e}")
+        print(f"[ERROR] DynamoDB Add Labeled Sample Error: {e}")
         # Fallback: log to file
         try:
             log_file = 'local_training_samples.json'
@@ -332,7 +332,7 @@ def add_labeled_sample_to_dynamodb(tinggi_meter, lat, lon, bentuk):
             existing.append(item)
             with open(log_file, 'w') as f:
                 json.dump(existing, f, indent=2, default=str)
-            print(f"📝 Training sample saved to local file: {log_file}")
+            print(f"[LOCAL] Training sample saved to local file: {log_file}")
         except:
             pass
         return None
@@ -344,7 +344,7 @@ def verify_prediction_log(id_str, actual_bentuk):
         response = table.get_item(Key={'id': id_str})
         item = response.get('Item')
         if not item:
-            print(f"⚠️ Item with ID '{id_str}' not found in DynamoDB.")
+            print(f"[WARN] Item with ID '{id_str}' not found in DynamoDB.")
             return False
 
         table.update_item(
@@ -355,10 +355,10 @@ def verify_prediction_log(id_str, actual_bentuk):
                 ':b': actual_bentuk
             }
         )
-        print(f"✅ Prediction log '{id_str}' verified and promoted to training sample.")
+        print(f"[OK] Prediction log '{id_str}' verified and promoted to training sample.")
         return True
     except Exception as e:
-        print(f"❌ DynamoDB Verify Log Error: {e}")
+        print(f"[ERROR] DynamoDB Verify Log Error: {e}")
         return False
 
 def get_training_samples_from_dynamodb():
@@ -382,7 +382,7 @@ def get_training_samples_from_dynamodb():
         )
         return response.get('Items', [])
     except Exception as e:
-        print(f"❌ DynamoDB Scan Error: {e}")
+        print(f"[ERROR] DynamoDB Scan Error: {e}")
         return []
 
 def get_all_logs_from_dynamodb():
@@ -418,13 +418,13 @@ def get_all_logs_from_dynamodb():
         
         return items
     except Exception as e:
-        print(f"❌ DynamoDB Scan All Error: {e}")
+        print(f"[ERROR] DynamoDB Scan All Error: {e}")
         return []
 
 # Notification and Queue Operations
 def send_alert(message):
     """Publish a warning message to the SNS alert topic and optional Telegram channel"""
-    print(f"⚠️ ALERT: {message}")
+    print(f"[ALERT] {message}")
     
     if not AWS_ENABLED:
         # Log alert to file
@@ -446,14 +446,14 @@ def send_alert(message):
     
     try:
         topic_arn = sns.create_topic(Name=TOPIC_NAME)['TopicArn']
-        sns.publish(TopicArn=topic_arn, Message=message, Subject="🌋 Volcano Classifier Warning")
-        print(f"✅ Published SNS Alert: {message}")
+        sns.publish(TopicArn=topic_arn, Message=message, Subject="Volcano Classifier Warning")
+        print(f"[OK] Published SNS Alert: {message}")
         
         if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
             send_telegram_alert(message)
         return True
     except Exception as e:
-        print(f"❌ SNS Alert Error: {e}")
+        print(f"[ERROR] SNS Alert Error: {e}")
         return False
 
 def send_telegram_alert(message):
@@ -464,15 +464,15 @@ def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": f"🚨 *VOLCANO AI ALERT* 🚨\n\n{message}",
+        "text": f"*VOLCANO AI ALERT*\n\n{message}",
         "parse_mode": "Markdown"
     }
     try:
         requests.post(url, json=payload, timeout=5)
-        print("✅ Telegram alert sent successfully.")
+        print("[OK] Telegram alert sent successfully.")
         return True
     except Exception as e:
-        print(f"❌ Telegram Warning Dispatch Error: {e}")
+        print(f"[ERROR] Telegram Warning Dispatch Error: {e}")
         return False
 
 def push_to_queue(message_body):
@@ -498,10 +498,10 @@ def push_to_queue(message_body):
     try:
         queue_url = sqs.get_queue_url(QueueName=QUEUE_NAME)['QueueUrl']
         sqs.send_message(QueueUrl=queue_url, MessageBody=message_body)
-        print(f"✅ Log pushed to SQS Queue: {QUEUE_NAME}")
+        print(f"[OK] Log pushed to SQS Queue: {QUEUE_NAME}")
         return True
     except Exception as e:
-        print(f"❌ SQS Queue Error: {e}")
+        print(f"[ERROR] SQS Queue Error: {e}")
         return False
 
 def log_metric(metric_name, value, unit='None'):
@@ -539,5 +539,5 @@ def log_metric(metric_name, value, unit='None'):
         )
         return True
     except Exception as e:
-        print(f"❌ CloudWatch Put Metric Error: {e}")
+        print(f"[ERROR] CloudWatch Put Metric Error: {e}")
         return False

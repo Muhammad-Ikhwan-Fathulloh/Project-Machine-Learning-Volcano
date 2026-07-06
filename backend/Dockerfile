@@ -25,4 +25,4 @@ RUN mkdir -p /app/local_data /app/models
 EXPOSE 5000
 
 # Run the application - SIMPLE AND STABLE
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["python", "main.py"]

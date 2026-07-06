@@ -7,7 +7,7 @@ API_BASE_URL = "http://localhost:8080"
 
 def print_separator(title):
     print("\n" + "=" * 60)
-    print(f"🔥 {title.upper()} 🔥")
+    print(f"  {title.upper()}  ")
     print("=" * 60)
 
 def test_health():
@@ -20,10 +20,10 @@ def test_health():
             print(json.dumps(response.json(), indent=4))
             return True
         else:
-            print(f"❌ Error: Server merespon dengan status {response.status_code}")
+            print(f"[ERROR] Server merespon dengan status {response.status_code}")
             return False
     except Exception as e:
-        print(f"❌ Error: Tidak dapat terhubung ke API Server. {e}")
+        print(f"[ERROR] Tidak dapat terhubung ke API Server. {e}")
         return False
 
 def test_single_prediction():
@@ -48,16 +48,16 @@ def test_single_prediction():
         
         if response.status_code == 200:
             result = response.json()
-            print("\n✅ Prediksi Berhasil!")
+            print("\n[OK] Prediksi Berhasil!")
             print(f"   Shape Gunung Berapi : {result['prediction']}")
             print(f"   Tingkat Keyakinan   : {round(result['confidence'] * 100, 2)}%")
             print(f"   ID Log DynamoDB     : {result['input']['id']}")
             return result['input']['id']  # Mengembalikan log ID untuk pengetesan verifikasi nanti
         else:
-            print(f"❌ Gagal: {response.status_code} - {response.text}")
+            print(f"[ERROR] Gagal: {response.status_code} - {response.text}")
             return None
     except Exception as e:
-        print(f"❌ Terjadi kesalahan: {e}")
+        print(f"[ERROR] Terjadi kesalahan: {e}")
         return None
 
 def test_batch_prediction():
@@ -84,7 +84,7 @@ def test_batch_prediction():
         
         if response.status_code == 200:
             result = response.json()
-            print("\n✅ Batch Prediksi Berhasil!")
+            print("\n[OK] Batch Prediksi Berhasil!")
             print(f"   Total Berhasil Diproses: {result['total']}")
             print("\n   Hasil Prediksi:")
             for index, item in enumerate(result['results']):
@@ -93,9 +93,9 @@ def test_batch_prediction():
                 else:
                     print(f"   [{index+1}] Gagal memproses: {item.get('error')}")
         else:
-            print(f"❌ Gagal: {response.status_code} - {response.text}")
+            print(f"[ERROR] Gagal: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Terjadi kesalahan: {e}")
+        print(f"[ERROR] Terjadi kesalahan: {e}")
 
 def test_add_custom_sample():
     """Menambahkan data latih baru langsung ke DynamoDB dataset"""
@@ -120,18 +120,18 @@ def test_add_custom_sample():
         
         if response.status_code == 200:
             result = response.json()
-            print("\n✅ Data Latih Baru Berhasil Disimpan ke DynamoDB!")
+            print("\n[OK] Data Latih Baru Berhasil Disimpan ke DynamoDB!")
             print(f"   ID Data Baru: {result['id']}")
             print(f"   Pesan: {result['message']}")
         else:
-            print(f"❌ Gagal: {response.status_code} - {response.text}")
+            print(f"[ERROR] Gagal: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Terjadi kesalahan: {e}")
+        print(f"[ERROR] Terjadi kesalahan: {e}")
 
 def test_verify_prediction(log_id):
     """Mempromosikan log API biasa menjadi training sample di DynamoDB"""
     if not log_id:
-        print("\nℹ️ Melewati pengujian verifikasi log karena tidak ada ID log yang tersedia.")
+        print("\n[INFO] Melewati pengujian verifikasi log karena tidak ada ID log yang tersedia.")
         return
 
     print_separator("5. Verifikasi & Promosikan Log ke Dataset (/verify-prediction)")
@@ -153,17 +153,17 @@ def test_verify_prediction(log_id):
         
         if response.status_code == 200:
             result = response.json()
-            print("\n✅ Log Inferensi Berhasil Diverifikasi Menjadi Dataset Latih!")
+            print("\n[OK] Log Inferensi Berhasil Diverifikasi Menjadi Dataset Latih!")
             print(f"   Pesan: {result['message']}")
         else:
-            print(f"❌ Gagal: {response.status_code} - {response.text}")
+            print(f"[ERROR] Gagal: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Terjadi kesalahan: {e}")
+        print(f"[ERROR] Terjadi kesalahan: {e}")
 
 def test_retraining():
     """Memicu pelatihan ulang model dan mengunggahnya ke S3 secara otomatis"""
     print_separator("6. Pemicuan Retraining Model & Upload ke S3 (/retrain)")
-    print("⏳ Sedang melatih ulang Random Forest Classifier di server...")
+    print("Sedang melatih ulang Random Forest Classifier di server...")
     print("   (Proses ini mengambil dataset dasar, menggabungkan data kustom di DynamoDB, melatih model baru, mengunggah ke S3, dan melakukan hot-reload!)")
     
     try:
@@ -171,14 +171,14 @@ def test_retraining():
         
         if response.status_code == 200:
             result = response.json()
-            print("\n🚀 RETRAINING BERHASIL DAN TER-HOT-RELOAD DI MEMORI API!")
+            print("\n[OK] RETRAINING BERHASIL DAN TER-HOT-RELOAD DI MEMORI API!")
             print(f"   Pesan                 : {result['message']}")
             print(f"   Skor Akurasi Training : {round(result['metrics']['training_score'] * 100, 2)}%")
             print(f"   Total Sampel Digunakan: {result['metrics']['total_samples']} (incl. {result['metrics']['custom_samples_used']} kustom dari DynamoDB)")
             print(f"   Daftar Kelas Gunung   : {', '.join(result['metrics']['classes'])}")
             
             # Print ringkasan klasifikasi report
-            print("\n📊 Laporan Klasifikasi Model Terlatih Baru:")
+            print("\n   Laporan Klasifikasi Model Terlatih Baru:")
             print(f"   {'Class Label':<18} | {'Precision':<10} | {'Recall':<10} | {'F1-Score':<10} | {'Support':<8}")
             print("   " + "-" * 60)
             
@@ -187,18 +187,18 @@ def test_retraining():
                     continue
                 print(f"   {class_name:<18} | {round(metrics['precision']*100, 1):<9}% | {round(metrics['recall']*100, 1):<9}% | {round(metrics['f1_score']*100, 1):<9}% | {metrics['support']:<8}")
         else:
-            print(f"❌ Retraining Gagal: {response.status_code} - {response.text}")
+            print(f"[ERROR] Retraining Gagal: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Terjadi kesalahan saat retraining: {e}")
+        print(f"[ERROR] Terjadi kesalahan saat retraining: {e}")
 
 if __name__ == "__main__":
     print("============================================================")
-    print("🚀 MEMULAI PENGUJIAN API VOLCANO AI CLASSIFIER & AWS PIPELINE")
+    print("  MEMULAI PENGUJIAN API VOLCANO AI CLASSIFIER & AWS PIPELINE")
     print("============================================================")
     
     # 1. Cek kesehatan server API
     if not test_health():
-        print("\n❌ Pengujian dihentikan karena server API offline.")
+        print("\n[ERROR] Pengujian dihentikan karena server API offline.")
         sys.exit(1)
         
     # 2. Uji Prediksi Tunggal dan ambil ID lognya
@@ -217,5 +217,5 @@ if __name__ == "__main__":
     test_retraining()
     
     print("\n" + "=" * 60)
-    print("🎉 SELURUH PENGUJIAN API AI DAN AWS FREE TIER Selesai!")
+    print("  SELURUH PENGUJIAN API AI DAN AWS FREE TIER Selesai!")
     print("=" * 60)

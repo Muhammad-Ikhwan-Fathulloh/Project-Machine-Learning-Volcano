@@ -105,7 +105,7 @@ should_exit = False
 def signal_handler(sig, frame):
     """Handle shutdown signals gracefully"""
     global should_exit
-    logger.info(f"📡 Received signal {sig}")
+    logger.info(f"Received signal {sig}")
     should_exit = True
     sys.exit(0)
 
@@ -122,7 +122,7 @@ def load_or_train_model():
     global model, label_encoder, is_ready
     
     logger.info("=" * 50)
-    logger.info("📦 LOADING/TRAINING MODEL...")
+    logger.info("LOADING/TRAINING MODEL...")
     logger.info("=" * 50)
     
     model_loaded = False
@@ -131,37 +131,42 @@ def load_or_train_model():
     if os.path.exists(MODEL_PATH):
         try:
             model = joblib.load(MODEL_PATH)
-            logger.info(f"✅ Model loaded from {MODEL_PATH}")
+            logger.info(f"[OK] Model loaded from {MODEL_PATH}")
             model_loaded = True
         except Exception as e:
-            logger.error(f"❌ Failed to load model: {e}")
+            logger.error(f"[ERROR] Failed to load model: {e}")
     
     # Load label encoder
     if os.path.exists(ENCODER_PATH):
         try:
             label_encoder = joblib.load(ENCODER_PATH)
-            logger.info(f"✅ Label encoder loaded from {ENCODER_PATH}")
+            logger.info(f"[OK] Label encoder loaded from {ENCODER_PATH}")
         except Exception as e:
-            logger.error(f"❌ Failed to load label encoder: {e}")
+            logger.error(f"[ERROR] Failed to load label encoder: {e}")
             label_encoder = None
+    
+    # If model loaded but encoder is missing, create a default encoder
+    if model_loaded and label_encoder is None:
+        logger.warning("[WARN] Model loaded but label encoder is missing, creating default encoder")
+        label_encoder = create_default_label_encoder()
     
     # If model not loaded, train new one
     if not model_loaded:
-        logger.info("🔄 Training new model...")
+        logger.info("Training new model...")
         try:
             model, label_encoder = train_default_model()
-            logger.info("✅ New model trained and saved")
+            logger.info("[OK] New model trained and saved")
         except Exception as e:
-            logger.error(f"❌ Failed to train model: {e}")
+            logger.error(f"[ERROR] Failed to train model: {e}")
             model = create_dummy_model()
             label_encoder = create_default_label_encoder()
-            logger.warning("⚠️ Using dummy model as fallback")
+            logger.warning("[WARN] Using dummy model as fallback")
     
     is_ready = model is not None
     logger.info("=" * 50)
-    logger.info(f"🚀 Model ready: {is_ready}")
+    logger.info(f"Model ready: {is_ready}")
     if is_ready and label_encoder:
-        logger.info(f"🏷️ Classes: {list(label_encoder.classes_)}")
+        logger.info(f"Classes: {list(label_encoder.classes_)}")
     logger.info("=" * 50)
     
     return model, label_encoder
@@ -169,17 +174,17 @@ def load_or_train_model():
 def train_default_model():
     """Train a default model from public dataset"""
     try:
-        logger.info("📚 Downloading training data...")
+        logger.info("Downloading training data...")
         url = 'https://raw.githubusercontent.com/yogski/indonesian_public_data/master/csv/indonesia_volcanoes.csv'
         df = pd.read_csv(url)
-        logger.info(f"✅ Downloaded {len(df)} records")
+        logger.info(f"[OK] Downloaded {len(df)} records")
         
         df['tinggi_meter'] = df['tinggi_meter'].astype(str).str.extract('(\d+)').astype(float)
         
         def extract_coordinates(geolokasi_str):
             if pd.isna(geolokasi_str):
                 return np.nan, np.nan
-            match = re.search(r'([-+]?\d+\.?\d*)°([NS])\s+([-+]?\d+\.?\d*)°([EW])',
+            match = re.search(r'([-+]?\d+\.?\d*)\xb0([NS])\s+([-+]?\d+\.?\d*)\xb0([EW])',
                               str(geolokasi_str), re.IGNORECASE)
             if match:
                 lat_val = float(match.group(1))
@@ -193,7 +198,7 @@ def train_default_model():
 
         df[['lat', 'lon']] = df['geolokasi'].apply(lambda x: pd.Series(extract_coordinates(x)))
         df_cleaned = df.dropna().copy()
-        logger.info(f"✅ Cleaned {len(df_cleaned)} records")
+        logger.info(f"[OK] Cleaned {len(df_cleaned)} records")
         
         df_final = df_cleaned[['tinggi_meter', 'lat', 'lon', 'bentuk']].copy()
         
@@ -209,17 +214,17 @@ def train_default_model():
         joblib.dump(new_model, MODEL_PATH)
         joblib.dump(new_label_encoder, ENCODER_PATH)
         
-        logger.info(f"✅ Model trained with {len(df_final)} samples")
-        logger.info(f"🏷️ Classes: {list(new_label_encoder.classes_)}")
+        logger.info(f"[OK] Model trained with {len(df_final)} samples")
+        logger.info(f"Classes: {list(new_label_encoder.classes_)}")
         
         return new_model, new_label_encoder
     except Exception as e:
-        logger.error(f"❌ Failed to train model: {e}")
+        logger.error(f"[ERROR] Failed to train model: {e}")
         raise
 
 def create_dummy_model():
     """Create a dummy model as fallback"""
-    logger.warning("⚠️ Creating dummy model as fallback")
+    logger.warning("[WARN] Creating dummy model as fallback")
     dummy_model = RandomForestClassifier(random_state=42)
     X_dummy = np.array([[1000, 0, 0], [2000, 0, 0], [3000, 0, 0]])
     y_dummy = np.array([0, 1, 2])
@@ -285,19 +290,19 @@ async def lifespan(app: FastAPI):
     global model, label_encoder, is_ready
     
     logger.info("=" * 50)
-    logger.info("🚀 STARTING VOLCANO CLASSIFIER API")
+    logger.info("STARTING VOLCANO CLASSIFIER API")
     logger.info("=" * 50)
-    logger.info(f"📍 Port: {PORT}")
-    logger.info(f"📁 Working Directory: {os.getcwd()}")
+    logger.info(f"Port: {PORT}")
+    logger.info(f"Working Directory: {os.getcwd()}")
     
     try:
         aws_service.init_resources()
-        logger.info(f"📌 Mode: {'AWS' if aws_service.AWS_ENABLED else 'LOCAL'}")
+        logger.info(f"Mode: {'AWS' if aws_service.AWS_ENABLED else 'LOCAL'}")
         if not aws_service.AWS_ENABLED:
-            logger.info("   ℹ️ AWS not configured - using local file storage")
+            logger.info("   AWS not configured - using local file storage")
     except Exception as e:
-        logger.warning(f"⚠️ AWS initialization warning: {e}")
-        logger.info("📌 Mode: LOCAL (AWS disabled)")
+        logger.warning(f"[WARN] AWS initialization warning: {e}")
+        logger.info("Mode: LOCAL (AWS disabled)")
     
     logger.info("=" * 50)
     
@@ -305,21 +310,21 @@ async def lifespan(app: FastAPI):
         load_or_train_model()
         is_ready = model is not None
     except Exception as e:
-        logger.error(f"❌ Critical error loading model: {e}")
+        logger.error(f"[ERROR] Critical error loading model: {e}")
         is_ready = False
     
     logger.info("=" * 50)
     if is_ready:
-        logger.info(f"✅ API READY on port {PORT}")
-        logger.info(f"📚 Documentation: http://localhost:{PORT}/docs")
-        logger.info(f"🏷️ Classes: {list(label_encoder.classes_) if label_encoder else 'Unknown'}")
+        logger.info(f"[OK] API READY on port {PORT}")
+        logger.info(f"Documentation: http://localhost:{PORT}/docs")
+        logger.info(f"Classes: {list(label_encoder.classes_) if label_encoder else 'Unknown'}")
     else:
-        logger.error("❌ API STARTED WITH ERRORS - Model not available")
+        logger.error("[ERROR] API STARTED WITH ERRORS - Model not available")
     logger.info("=" * 50)
     
     yield
     
-    logger.info("🛑 Shutting down...")
+    logger.info("Shutting down...")
 
 # ============================================
 # INITIALIZE FASTAPI APP
@@ -438,7 +443,7 @@ async def predict_volcano(volcano: VolcanoInput):
                 confidence
             )
         except Exception as e:
-            logger.warning(f"⚠️ Failed to log inference: {e}")
+            logger.warning(f"[WARN] Failed to log inference: {e}")
         
         sqs_payload = {
             "id": pred_id,
@@ -452,19 +457,19 @@ async def predict_volcano(volcano: VolcanoInput):
         try:
             aws_service.push_to_queue(json.dumps(sqs_payload))
         except Exception as e:
-            logger.warning(f"⚠️ Failed to push to queue: {e}")
+            logger.warning(f"[WARN] Failed to push to queue: {e}")
         
         try:
             aws_service.log_metric("PredictionConfidence", confidence, "Percent")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to log metric: {e}")
+            logger.warning(f"[WARN] Failed to log metric: {e}")
         
         if confidence < 0.5:
             warning_msg = f"Low confidence volcano prediction warning!\nID: {pred_id}\nCoordinates: {volcano.lat}, {volcano.lon}\nHeight: {volcano.tinggi_meter}m\nPredicted: {prediction_class}\nConfidence: {round(confidence * 100, 2)}%"
             try:
                 aws_service.send_alert(warning_msg)
             except Exception as e:
-                logger.warning(f"⚠️ Failed to send alert: {e}")
+                logger.warning(f"[WARN] Failed to send alert: {e}")
         
         return PredictionResponse(
             success=True,
@@ -479,7 +484,7 @@ async def predict_volcano(volcano: VolcanoInput):
         )
     
     except Exception as e:
-        logger.error(f"❌ Prediction failed: {e}")
+        logger.error(f"[ERROR] Prediction failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Prediction failed: {str(e)}"
@@ -662,7 +667,7 @@ async def retrain_model():
     """Retrain the model with latest data"""
     global model, label_encoder, is_ready
     try:
-        logger.info("🔄 Retraining pipeline initiated...")
+        logger.info("Retraining pipeline initiated...")
         
         url = 'https://raw.githubusercontent.com/yogski/indonesian_public_data/master/csv/indonesia_volcanoes.csv'
         df = pd.read_csv(url)
@@ -672,7 +677,7 @@ async def retrain_model():
         def extract_coordinates(geolokasi_str):
             if pd.isna(geolokasi_str):
                 return np.nan, np.nan
-            match = re.search(r'([-+]?\d+\.?\d*)°([NS])\s+([-+]?\d+\.?\d*)°([EW])',
+            match = re.search(r'([-+]?\d+\.?\d*)\xb0([NS])\s+([-+]?\d+\.?\d*)\xb0([EW])',
                               str(geolokasi_str), re.IGNORECASE)
             if match:
                 lat_val = float(match.group(1))
@@ -690,7 +695,7 @@ async def retrain_model():
         
         try:
             db_items = aws_service.get_training_samples_from_dynamodb()
-            logger.info(f"📥 Found {len(db_items)} verified custom training samples.")
+            logger.info(f"Found {len(db_items)} verified custom training samples.")
         except:
             db_items = []
         
@@ -730,7 +735,7 @@ async def retrain_model():
         label_encoder = new_label_encoder
         is_ready = True
         
-        logger.info("🚀 Model successfully retrained and hot-reloaded!")
+        logger.info("Model successfully retrained and hot-reloaded!")
         
         return {
             "success": True,
@@ -744,7 +749,7 @@ async def retrain_model():
         }
         
     except Exception as e:
-        logger.error(f"❌ Retraining failed: {e}")
+        logger.error(f"[ERROR] Retraining failed: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -762,9 +767,9 @@ if __name__ == "__main__":
     port = int(os.getenv('PORT', 5000))
     
     print("=" * 60)
-    print(f"🚀 Starting Volcano Classifier API")
-    print(f"📍 Port: {port}")
-    print(f"📁 Working Directory: {os.getcwd()}")
+    print(f"Starting Volcano Classifier API")
+    print(f"Port: {port}")
+    print(f"Working Directory: {os.getcwd()}")
     print("=" * 60)
     
     # Run with proper settings
