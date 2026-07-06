@@ -63,6 +63,18 @@ Pastikan Docker Desktop aktif, kemudian jalankan perintah berikut di terminal:
 docker run --rm -it -p 4566:4566 -p 4510-4559:4510-4559 localstack/localstack
 ```
 
+atau langkah dibawah ini:
+
+```bash
+// Start Localstak
+localstack start -d
+```
+
+```bash
+// Stop Localstak
+localstack stop
+```
+
 #### Langkah B: Setup Virtual Environment & Install Dependensi
 Buka terminal di root folder proyek:
 ```bash
