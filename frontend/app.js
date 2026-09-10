@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8080";
+const API_BASE_URL = "http://volcano-classifier-machinelearning-nxnpt-3c9189-43-173-8-61.sslip.io";
 let isApiOnline = false;
 
 // On Load initialization
